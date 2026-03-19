@@ -8,6 +8,8 @@ A web-based interactive experience where conference attendees perform a guided W
 
 **Goal:** "Feel like a hacker" — educational, engaging, self-contained booth experience.
 
+**Language:** Russian (the conference and audience are Russian-speaking). All UI text, guide messages, hints, and completion screens are in Russian.
+
 ## Hardware Setup
 
 | Component | Details |
@@ -45,21 +47,23 @@ VirtualBox USB passthrough for WiFi adapters in monitor mode is unreliable. Live
 │  │         │                    │               │ │
 │  │         ▼                    ▼               │ │
 │  │  ┌──────────────┐  ┌────────────────────┐   │ │
-│  │  │ node-pty     │  │ Validator          │   │ │
-│  │  │ (bash shell) │──│ (monitors stdout)  │   │ │
+│  │  │ node-pty ×2  │  │ Validator          │   │ │
+│  │  │ (main shell  │──│ (monitors stdout   │   │ │
+│  │  │ + capture)   │  │  from both PTYs)   │   │ │
 │  │  └──────────────┘  └────────────────────┘   │ │
 │  └─────────────────────────────────────────────┘ │
 │                       │                          │
 │  ┌────────────────────▼────────────────────────┐ │
 │  │            Browser (localhost)               │ │
 │  │  ┌───────────────┬─────────────────────┐    │ │
-│  │  │  Chat Guide   │    xterm.js         │    │ │
-│  │  │  (40%)        │    Terminal (60%)    │    │ │
-│  │  │               │                     │    │ │
-│  │  │  Mentor msgs  │  Real bash shell    │    │ │
-│  │  │  Hints        │  Full I/O           │    │ │
-│  │  │  Buttons      │                     │    │ │
-│  │  └───────────────┴─────────────────────┘    │ │
+│  │  │  Chat Guide   │  ┌─────────────────┐ │    │ │
+│  │  │  (40%)        │  │ Main Terminal   │ │    │ │
+│  │  │               │  │ (xterm.js #1)   │ │    │ │
+│  │  │  Mentor msgs  │  ├─────────────────┤ │    │ │
+│  │  │  Hints        │  │ Capture Monitor │ │    │ │
+│  │  │  Buttons      │  │ (xterm.js #2)   │ │    │ │
+│  │  │               │  └─────────────────┘ │    │ │
+│  │  └───────────────┴──────────────────────┘    │ │
 │  └─────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────┘
          │                          │
@@ -127,10 +131,24 @@ VirtualBox USB passthrough for WiFi adapters in monitor mode is unreliable. Live
 
 ### Terminal Panel (right, 60%)
 
-- Full xterm.js terminal connected to bash via node-pty
-- Kali Linux prompt with standard colors
-- Real shell — all commands work, not sandboxed
-- Terminal output is streamed to the Step Engine for auto-validation
+Two stacked terminal panes, each backed by its own node-pty instance:
+
+- **Main Terminal (top, ~65% of terminal area):** Full interactive bash shell. Participant types commands here. Connected via xterm.js + WebSocket to a dedicated node-pty process.
+- **Capture Monitor (bottom, ~35% of terminal area):** Read-only view managed by the Step Engine. During steps 4-6 the engine automatically launches `airodump-ng` targeting the specific network here, so the participant can watch captured packets and handshake status while executing `aireplay-ng` in the main terminal. Hidden during steps that don't need it (steps 1-3, 7).
+
+Both terminal outputs are streamed to the Step Engine for auto-validation. This solves the concurrency problem: `airodump-ng` must run continuously while `aireplay-ng` sends deauth packets in parallel.
+
+```
+┌──────────────────┬────────────────────────────┐
+│                  │  MAIN TERMINAL (65%)       │
+│   CHAT GUIDE     │  ┌──(kali㉿kali)-[~]      │
+│   (40%)          │  └─$ aireplay-ng ...       │
+│                  ├────────────────────────────┤
+│                  │  CAPTURE MONITOR (35%)     │
+│                  │  airodump-ng output...     │
+│                  │  WPA handshake: AA:BB:CC   │
+└──────────────────┴────────────────────────────┘
+```
 
 ## Visual Style
 
@@ -142,6 +160,7 @@ VirtualBox USB passthrough for WiFi adapters in monitor mode is unreliable. Live
 - Accent glow: `text-shadow: 0 0 6px #0f0` — only on headers and key elements, NOT on body text
 - Font: `'JetBrains Mono', 'Fira Code', monospace` for both panels
 - Font size: 14-15px minimum for readability at conference booth distance
+- Minimum display resolution: 1920x1080 (airodump-ng output needs 120+ columns in the terminal pane)
 - Terminal: standard Kali colors (xterm.js theme override)
 - Guide panel: slightly lighter background (`#0d140d`) to visually separate from terminal
 
@@ -188,15 +207,24 @@ Hints reveal progressively — first click shows hint 1, second shows hint 2, et
 
 ## Attack Scenario Steps
 
-| # | Step | Tool | Validation Pattern |
-|---|------|------|--------------------|
-| 1 | Introduction / welcome | — | Click "Start" |
-| 2 | Enable monitor mode | `airmon-ng` | `wlan\d+mon\|monitor mode` |
-| 3 | Scan for networks | `airodump-ng` | Target BSSID appears in output |
-| 4 | Target specific network | `airodump-ng` with filters | `-w` flag used, capture file created |
-| 5 | Deauth client | `aireplay-ng` | `DeAuth\|deauthentication` |
-| 6 | Capture handshake | (wait for airodump) | `WPA handshake:` in output |
-| 7 | Crack with dictionary | `aircrack-ng` | `KEY FOUND!` |
+**Target BSSID is configured in steps.json** (e.g., `"target_bssid": "AA:BB:CC:DD:EE:FF"`) and used for validation patterns and the auto-launched airodump-ng capture.
+
+| # | Step | Tool | Terminal | Validation Pattern | Notes |
+|---|------|------|----------|--------------------|-------|
+| 1 | Welcome | — | — | Click "Start" | Intro screen |
+| 2 | Kill interfering processes | `airmon-ng check kill` | Main | `Killing these processes` | Prevents NetworkManager interference |
+| 3 | Enable monitor mode | `airmon-ng start` | Main | `(wlan\d+mon\|monitor mode)` | |
+| 4 | Scan for networks | `airodump-ng` | Main | `{target_bssid}` in output | Participant sees target SSID in scan |
+| 5 | Target & capture | `airodump-ng` with filters | **Capture Monitor** (auto-launched by engine) | `CH\s+\d+.*{target_bssid}` | Engine launches: `airodump-ng -c {ch} --bssid {bssid} -w /tmp/capture wlan0mon` |
+| 6 | Deauth client | `aireplay-ng` | Main | `(DeAuth\|deauthentication)` | Participant runs deauth while capture monitor watches |
+| 7 | Handshake captured | (waiting) | Capture Monitor | `WPA handshake:\s*{target_bssid}` | Auto-detected in capture monitor output |
+| 8 | Crack with dictionary | `aircrack-ng` | Main | `KEY FOUND!` | Engine stops capture monitor before this step |
+
+### Capture Monitor Lifecycle
+
+- **Step 5:** Step Engine automatically spawns `airodump-ng` in the Capture Monitor pane with the correct BSSID, channel, and output file. Participant does NOT need to type this command.
+- **Steps 6-7:** Capture Monitor stays running. Participant works in Main Terminal for deauth.
+- **Step 8:** Engine kills the capture monitor process, hides the pane. Participant runs `aircrack-ng` in Main Terminal with the capture file path shown in the guide.
 
 ### Router Configuration
 
@@ -210,8 +238,8 @@ Hints reveal progressively — first click shows hint 1, second shows hint 2, et
 
 ### Auto-reset
 
-- Inactivity timer: 3 minutes with no terminal input or guide interaction
-- Warning at 2 minutes: "Still there? Session will reset in 60 seconds..."
+- Inactivity timer: 5 minutes with no terminal input, no guide interaction, AND no terminal output (active processes like airodump-ng producing output keep the session alive)
+- Warning at 4 minutes: "Still there? Session will reset in 60 seconds..."
 - On reset:
   1. Kill any running aircrack processes
   2. Restart network interfaces (`airmon-ng check kill`, reset adapter)
@@ -243,10 +271,11 @@ When the participant finds the WiFi password:
 WiFiLab/
 ├── server/
 │   ├── index.js              # Express + WebSocket server
-│   ├── terminal.js           # node-pty management
+│   ├── terminal.js           # node-pty management (main + capture monitor)
 │   ├── stepEngine.js         # Step validation & progression
 │   ├── sessionManager.js     # Reset, timeout, cleanup
-│   └── steps.json            # Step configuration
+│   ├── steps.json            # Step configuration
+│   └── wordlist.txt          # Dictionary for aircrack-ng (not web-accessible)
 ├── public/
 │   ├── index.html            # Main page
 │   ├── css/
@@ -256,8 +285,7 @@ WiFiLab/
 │   │   ├── terminal.js       # xterm.js setup + WebSocket
 │   │   ├── guide.js          # Chat guide panel logic
 │   │   └── completion.js     # Final screen + stats
-│   └── assets/
-│       └── wordlist.txt      # Dictionary for aircrack-ng
+│   └── assets/               # Static assets (images, fonts)
 ├── scripts/
 │   ├── setup.sh              # Install dependencies on Kali
 │   └── reset.sh              # Network interface reset script
@@ -274,14 +302,14 @@ WiFiLab/
 # Run once after booting Kali Live with persistence
 apt update
 apt install -y nodejs npm aircrack-ng
-cd /path/to/WiFiLab
+cd /home/kali/WiFiLab
 npm install
 ```
 
 ### Launch
 
 ```bash
-cd /path/to/WiFiLab
+cd /home/kali/WiFiLab
 sudo node server/index.js
 # Opens on http://localhost:3000
 ```
@@ -290,14 +318,34 @@ sudo node server/index.js
 
 ### Auto-start (optional)
 
-Add to persistence so the app launches on boot:
-```bash
-# /etc/rc.local or systemd service
-cd /home/kali/WiFiLab && node server/index.js &
-chromium --kiosk http://localhost:3000 &
+Systemd service for persistence (runs as root):
+```ini
+# /etc/systemd/system/wifilab.service
+[Unit]
+Description=WiFi Lab Server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kali/WiFiLab
+ExecStart=/usr/bin/node server/index.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-Chromium in kiosk mode = fullscreen browser, no address bar, clean look.
+Browser kiosk (separate service or autostart entry):
+```bash
+# /etc/xdg/autostart/wifilab-browser.desktop
+[Desktop Entry]
+Type=Application
+Name=WiFi Lab Browser
+Exec=chromium --kiosk http://localhost:3000
+```
+
+Chromium in kiosk mode = fullscreen browser, no address bar. `Restart=always` on the server ensures recovery from crashes. Chromium autostart handles browser restarts on login.
 
 ## Error Handling
 
@@ -307,7 +355,17 @@ Chromium in kiosk mode = fullscreen browser, no address bar, clean look.
 | Router not in range | Scan step shows "No target network found — check router is on" |
 | Handshake capture fails | Hint suggests retrying deauth, offer to auto-retry |
 | aircrack-ng not installed | setup.sh check at server start, clear error message |
-| Browser disconnects | WebSocket reconnect with state preservation |
+| Browser disconnects | WebSocket auto-reconnect: server holds session state in memory (current step, hint count, message history, timer). On reconnect client sends `sync` message, server replays current state. Server crash = full reset (acceptable — reset is fast) |
+
+## Session Logging
+
+Each completed (or abandoned) session is appended as a JSON line to `server/sessions.log`:
+
+```json
+{"timestamp":"2026-03-20T14:30:00Z","completed":true,"duration_sec":840,"steps_reached":8,"hints_used":5}
+```
+
+This data helps evaluate booth engagement: how many people completed, where they dropped off, average time.
 
 ## Security Considerations
 
