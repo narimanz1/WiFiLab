@@ -46,15 +46,20 @@ function startServer() {
     return s;
   }
 
+  // Send raw terminal data (NOT JSON-stringified) to preserve ANSI escape codes
+  function broadcastRaw(clients, data) {
+    clients.forEach(c => { if (c.readyState === 1) c.send(data); });
+  }
+
   function setupTerminalCallbacks() {
     tm.onMainData((data) => {
-      broadcast(terminalClients(), data);
+      broadcastRaw(terminalClients(), data);
       stepEngine.checkOutput('main', data);
       sessionManager.activity();
     });
 
     tm.onCaptureData((data) => {
-      broadcast(captureClients(), data);
+      broadcastRaw(captureClients(), data);
       stepEngine.checkOutput('capture', data);
       sessionManager.activity();
     });
@@ -95,7 +100,7 @@ function startServer() {
 
   function setupCaptureCallback() {
     tm.onCaptureData((data) => {
-      broadcast(captureClients(), data);
+      broadcastRaw(captureClients(), data);
       stepEngine.checkOutput('capture', data);
       sessionManager.activity();
     });
@@ -195,14 +200,8 @@ function startServer() {
         } catch (e) {}
       });
 
-      const currentStep = stepEngine.getCurrentStep();
-      ws.send(JSON.stringify({
-        type: 'step',
-        step: currentStep,
-        index: stepEngine.currentStepIndex,
-        total: stepEngine.steps.length,
-        messages: currentStep ? currentStep.messages : [],
-      }));
+      // Don't send initial step here — client sends 'sync' on connect which handles it
+      // This prevents duplicate messages on first load
 
     } else {
       ws.close(4000, 'Unknown endpoint');
