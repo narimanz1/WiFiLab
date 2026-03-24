@@ -1,6 +1,7 @@
 const Guide = (() => {
   let guideWs = null;
   let onStepReady = null;
+  let lastRenderedStepIndex = -1;
   const _externalHandlers = [];
 
   function init(callbacks) {
@@ -49,6 +50,10 @@ const Guide = (() => {
   }
 
   function renderStep(stepData) {
+    // Skip if we already rendered this step (prevents duplicates from sync + broadcast)
+    if (stepData.index === lastRenderedStepIndex) return;
+    lastRenderedStepIndex = stepData.index;
+
     const container = document.getElementById('guide-messages');
     const messages = stepData.messages || (stepData.step && stepData.step.messages) || [];
     messages.forEach((text, i) => {
@@ -85,6 +90,7 @@ const Guide = (() => {
 
   function clearMessages() {
     document.getElementById('guide-messages').innerHTML = '';
+    lastRenderedStepIndex = -1;
   }
 
   function updateProgress(current, total) {
