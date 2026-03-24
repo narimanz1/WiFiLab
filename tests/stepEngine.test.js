@@ -76,10 +76,12 @@ describe('StepEngine', () => {
     expect(engine.isComplete()).toBe(true);
   });
 
-  test('interpolates target_bssid in patterns', () => {
-    engine.currentStepIndex = 3; // scan_networks — pattern has {target_bssid}
-    const result = engine.checkOutput('main', `Found ${stepsConfig.target_bssid}`);
-    expect(result).toBe(true);
+  test('interpolates target_bssid in hints', () => {
+    engine.currentStepIndex = 5; // deauth — 3rd hint contains {target_bssid}
+    engine.getNextHint(); // skip hint 1
+    engine.getNextHint(); // skip hint 2
+    const hint3 = engine.getNextHint(); // hint 3 has the full command with BSSID
+    expect(hint3).toContain(stepsConfig.target_bssid);
   });
 
   test('getStats returns session statistics', () => {

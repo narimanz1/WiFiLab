@@ -9,7 +9,7 @@ const { SessionManager } = require('./sessionManager.js');
 const stepsConfig = require('./steps.json');
 
 const PORT = process.env.PORT || 3000;
-const HOST = '127.0.0.1';
+const HOST = process.env.HOST || '0.0.0.0';
 
 function createApp() {
   const app = express();
