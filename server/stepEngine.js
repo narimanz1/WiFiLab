@@ -7,6 +7,8 @@ class StepEngine {
     this.hintsUsed = 0;
     this.startTime = Date.now();
     this._completed = false;
+    this._stepValidated = false; // guard: prevent multiple fires per step
+    this._advancing = false;     // guard: prevent overlapping advance() calls
     this._listeners = [];
     this._outputBuffers = { main: '', capture: '' };
   }
@@ -16,20 +18,31 @@ class StepEngine {
   }
 
   advance() {
+    // Guard against multiple advance() from queued timeouts
+    if (this._advancing) return;
+    this._advancing = true;
+
     if (this.currentStepIndex < this.steps.length - 1) {
       this.currentStepIndex++;
       this.currentHintIndex = 0;
+      this._stepValidated = false;
+      // Clear buffers so old output doesn't match new step patterns
+      this._outputBuffers = { main: '', capture: '' };
       this._emit('step_change', {
         step: this.getCurrentStep(),
         index: this.currentStepIndex,
         total: this.steps.length,
       });
     }
+
+    this._advancing = false;
   }
 
   checkOutput(source, data) {
     const step = this.getCurrentStep();
     if (!step || step.validation.type !== 'output_match') return false;
+    // Already validated this step — wait for advance()
+    if (this._stepValidated) return false;
 
     const expectedSource = step.validation.source || 'main';
     if (source !== expectedSource) return false;
@@ -45,6 +58,9 @@ class StepEngine {
     const matched = regex.test(this._outputBuffers[source]);
 
     if (matched) {
+      // Lock: prevent this step from firing again
+      this._stepValidated = true;
+
       if (this.currentStepIndex === this.steps.length - 1) {
         const pwdMatch = this._outputBuffers[source].match(/KEY FOUND!\s*\[\s*(.+?)\s*\]/);
         this._completed = true;
@@ -64,6 +80,8 @@ class StepEngine {
   }
 
   forceAdvance() {
+    if (this._stepValidated) return; // already validated
+    this._stepValidated = true;
     const step = this.getCurrentStep();
     if (step) {
       this._emit('step_validated', {
@@ -108,6 +126,8 @@ class StepEngine {
     this.hintsUsed = 0;
     this.startTime = Date.now();
     this._completed = false;
+    this._stepValidated = false;
+    this._advancing = false;
     this._outputBuffers = { main: '', capture: '' };
     this._emit('reset', {});
   }

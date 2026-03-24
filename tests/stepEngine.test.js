@@ -117,4 +117,31 @@ describe('StepEngine', () => {
     engine.checkOutput('main', 'UND! [ secret123 ]');
     expect(engine.isComplete()).toBe(true);
   });
+
+  test('checkOutput fires only once per step (no duplicate validation)', () => {
+    let fireCount = 0;
+    engine.on('step_validated', () => fireCount++);
+    engine.currentStepIndex = 2; // monitor_mode
+    engine.checkOutput('main', 'wlan0mon monitor mode enabled');
+    engine.checkOutput('main', 'wlan0mon monitor mode enabled again');
+    engine.checkOutput('main', 'wlan0mon yet another line');
+    expect(fireCount).toBe(1);
+  });
+
+  test('advance clears output buffers', () => {
+    engine.currentStepIndex = 2; // monitor_mode
+    engine.checkOutput('main', 'wlan0mon monitor mode');
+    engine.advance(); // go to step 3
+    // Buffer should be clean — old output should not match new step
+    expect(engine._outputBuffers.main).toBe('');
+  });
+
+  test('forceAdvance only fires once', () => {
+    let fireCount = 0;
+    engine.on('step_validated', () => fireCount++);
+    engine.currentStepIndex = 2;
+    engine.forceAdvance();
+    engine.forceAdvance(); // second call should be ignored
+    expect(fireCount).toBe(1);
+  });
 });
