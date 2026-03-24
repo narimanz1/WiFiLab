@@ -107,7 +107,7 @@
       },
       "on_success": "Монитор захвата запущен! Видишь окно внизу? Там airodump-ng записывает пакеты.",
       "show_capture": true,
-      "capture_command": "sudo airodump-ng -c {target_channel} --bssid {target_bssid} -w {capture_path} wlan0mon"
+      "capture_command": "sudo airodump-ng --bssid {target_bssid} -w {capture_path} --write-interval 2 wlan0mon"
     },
     {
       "id": "deauth",

@@ -30,8 +30,8 @@ class TerminalManager {
     const args = os.platform() === 'win32' ? ['/c', command] : ['-c', command];
     this.capture = pty.spawn(shell, args, {
       name: 'xterm-256color',
-      cols: 160,
-      rows: 15,
+      cols: 200,
+      rows: 24,
       cwd: os.tmpdir(),
     });
     this.capture.onData((data) => {
